@@ -1,7 +1,7 @@
 import XCTest
 import PerfectLib
 import StORM
-import MongoDB
+import MongoKitten
 import SwiftRandom
 @testable import MongoDBStORM
 
@@ -41,11 +41,11 @@ class User: MongoDBStORM {
 
 class MongoDBStORMTests: XCTestCase {
 
-	override func setUp() {
-		super.setUp()
+    override func setUp() {
+        super.setUp()
 
-		MongoDBConnection.host = "localhost"
-		MongoDBConnection.database = "perfect_testing"
+        MongoDBConnection.host = "localhost"
+        MongoDBConnection.database = "perfect_testing"
 	}
 
 
@@ -201,53 +201,52 @@ class MongoDBStORMTests: XCTestCase {
 	/* =============================================================================================
 	Find
 	============================================================================================= */
-	func testFindZero() {
-		let obj = User()
+    func testFindZero() {
+        let obj = User()
 
-		do {
-			try obj.find(["firstname":Randoms.randomAlphaNumericString(length: 12)])
-			XCTAssert(obj.results.rows.count == 0, "There was at least one row found. There should be ZERO.")
-		} catch {
-			XCTFail("Find error: \(obj.error.string())")
-		}
-	}
-	func testFind() {
-		let obj = User()
-		let rand = Randoms.randomAlphaNumericString(length: 12)
-		do {
-			obj.id	= rand
-			obj.firstname	= rand
-			obj.lastname	= "PotatoHead"
-			obj.email		= "potato@example.com"
-			try obj.save()
-		} catch {
-			XCTFail("\(error)")
-		}
-
-
-		let objFind = User()
-
-		do {
-			try objFind.find(["firstname":rand])
-			XCTAssert(objFind.results.rows.count == 1, "There should only be one row found.")
-		} catch {
-			XCTFail("Find error: \(obj.error.string())")
-		}
-	}
-
-	func testFindAll() {
-		let obj = User()
-
-		do {
-			try obj.find()
-			XCTAssert(obj.results.rows.count > 0, "There were rows found. There should be several.")
-		} catch {
-			XCTFail("Find error: \(obj.error.string())")
-		}
-	}
+        do {
+            let query: MongoKitten.Query = "firstname" == Randoms.randomAlphaNumericString(length: 12)
+            try obj.find(query)
+            XCTAssert(obj.results.rows.count == 0, "There was at least one row found. There should be ZERO.")
+        } catch {
+            XCTFail("Find error: \(obj.error.string())")
+        }
+    }
+    func testFind() {
+        let obj = User()
+        let rand = Randoms.randomAlphaNumericString(length: 12)
+        do {
+            obj.id	= rand
+            obj.firstname	= rand
+            obj.lastname	= "PotatoHead"
+            obj.email		= "potato@example.com"
+            try obj.save()
+        } catch {
+            XCTFail("\(error)")
+        }
 
 
+        let objFind = User()
 
+        do {
+            let query: MongoKitten.Query = "firstname" == rand
+            try objFind.find(query)
+            XCTAssert(objFind.results.rows.count == 1, "There should only be one row found.")
+        } catch {
+            XCTFail("Find error: \(obj.error.string())")
+        }
+    }
+    
+    func testFindAll() {
+        let obj = User()
+        
+        do {
+            try obj.find()
+            XCTAssert(obj.results.rows.count > 0, "There were rows found. There should be several.")
+        } catch {
+            XCTFail("Find error: \(obj.error.string())")
+        }
+    }
 
 
 	static var allTests : [(String, (MongoDBStORMTests) -> () throws -> Void)] {

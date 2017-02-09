@@ -7,7 +7,7 @@
 //
 
 import StORM
-import MongoDB
+import MongoKitten
 import PerfectLib
 import Foundation
 
@@ -15,14 +15,13 @@ import Foundation
 extension MongoDBStORM {
 
 	/// parseRows takes the [String:Any] result and returns an array of StormRows 
-	public func parseRows(_ result: MongoCursor) throws -> [StORMRow] {
+	public func parseRows(_ result: MongoKitten.Cursor<Document>) throws -> [StORMRow] {
 
 		var resultRows = [StORMRow]()
 
 		for i in result {
 			let thisRow = StORMRow()
-			let ii = try? i.asString.jsonDecode()
-			thisRow.data = ii as! Dictionary<String, Any>
+			thisRow.data = i.dictionaryValue
 			resultRows.append(thisRow)
 		}
 		

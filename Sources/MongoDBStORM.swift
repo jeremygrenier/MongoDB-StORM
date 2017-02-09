@@ -7,12 +7,13 @@
 //
 
 import StORM
-import MongoDB
+import MongoKitten
 import PerfectLogger
 import Foundation
 #if os(Linux)
 import LinuxBridge
 #endif
+
 /// MongoDBConnection sets the connection parameters for the MongoDB Server access
 /// Usage: 
 /// MongoDBConnection.host = "XXXXXX"
@@ -25,10 +26,8 @@ import LinuxBridge
 public struct MongoDBConnection {
 
 	public static var host: String		= "localhost"
-	public static var port: Int			= 27017
+	public static var port: UInt16		= 27017
 	public static var ssl: Bool			= false
-
-	public static var authmode: authModeType	= .none
 
 	public static var username: String	= ""
 	public static var password: String	= ""
@@ -38,15 +37,12 @@ public struct MongoDBConnection {
 	public static var database: String	= ""
 
 	private init(){}
-
-	public enum authModeType {
-		case none, standard
-	}
 }
 
 /// A "superclass" that is meant to be inherited from by oject classes.
 /// Provides ORM structre.
 open class MongoDBStORM: StORM, StORMProtocol {
+    public static var client: MongoKitten.Server?
 
 	/// Database to be used for this object
 	public var _database = MongoDBConnection.database
@@ -72,12 +68,23 @@ open class MongoDBStORM: StORM, StORMProtocol {
 
 	/// Populates a MongoDatabase object with the required connector information.
 	/// Returns the new MongoDatabase Object.
-	public func setupObject(_ db: String = "") throws -> MongoDatabase {
+	public func setupObject(_ db: String = "") throws -> MongoKitten.Database {
 		var usedb = db
 		if usedb.isEmpty { usedb = _database }
 		do {
-			let obj = try MongoClient(uri: "mongodb://\(MongoDBConnection.host)")
-			let database = MongoDatabase(client: obj, databaseName: usedb)
+            if MongoDBStORM.client == nil {
+                let clientSettings = ClientSettings(host: MongoHost(hostname: MongoDBConnection.host, port: MongoDBConnection.port),
+                                                    sslSettings: SSLSettings(enabled: MongoDBConnection.ssl),
+                                                    credentials: MongoCredentials(username: MongoDBConnection.username, password: MongoDBConnection.password),
+                                                    maxConnectionsPerServer: 20)
+
+                MongoDBStORM.client = try Server(clientSettings)
+            }
+
+            let client = MongoDBStORM.client!
+
+
+            let database = client[usedb]
 			return database
 		} catch {
 			throw error
@@ -86,13 +93,24 @@ open class MongoDBStORM: StORM, StORMProtocol {
 
 	/// Populates a MongoCollection object with the required connector information.
 	/// Returns the new MongoCollection Object.
-	public func setupCollection(_ db: String = "") throws -> (MongoCollection, MongoClient) {
+	public func setupCollection(_ db: String = "") throws -> MongoCollection {
 		var usedb = db
 		if usedb.isEmpty { usedb = _database }
 		do {
-			let client = try MongoClient(uri: "mongodb://\(MongoDBConnection.host)")
-			let collection = MongoCollection(client: client, databaseName: usedb, collectionName: _collection)
-			return (collection, client)
+            if MongoDBStORM.client == nil {
+                let clientSettings = ClientSettings(host: MongoHost(hostname: MongoDBConnection.host, port: MongoDBConnection.port),
+                                                    sslSettings: SSLSettings(enabled: MongoDBConnection.ssl),
+                                                    credentials: MongoCredentials(username: MongoDBConnection.username, password: MongoDBConnection.password),
+                                                    maxConnectionsPerServer: 20)
+
+                MongoDBStORM.client = try Server(clientSettings)
+            }
+
+
+            let database = MongoDBStORM.client![usedb]
+            let collection = database[_collection]
+
+			return collection
 		} catch {
 			throw error
 		}
@@ -127,18 +145,24 @@ open class MongoDBStORM: StORM, StORMProtocol {
 	@discardableResult
 	open func save() throws {
 		do {
-			let (collection, client) = try setupCollection()
-			let bson = try BSON(json: try asDataDict(1).jsonEncodedString())
+			let collection = try setupCollection()
+            var bson = try Document(extendedJSON: try asDataDict(1).jsonEncodedString())
 			if !keyIsEmpty() {
 				let (_, idval) = firstAsKey()
-				bson.append(key: "_id", string: "\(idval)")
+				bson.append("\(idval)", forKey: "_id")
 			}
-			let status = collection.save(document: bson)
-			if "\(status)" != "success" {
-				LogFile.critical("MongoDB Save error \(status)")
-				throw StORMError.error("MongoDB Save error \(status)")
-			}
-			close(collection, client)
+
+            do {
+                if let id = bson.dictionaryValue["_id"] as? String {
+                    let query: Query = "_id" == id
+                    try collection.update(matching: query, to: bson, upserting: true)
+                } else {
+                    try collection.insert(bson)
+                }
+            } catch let error {
+                LogFile.critical("MongoDB Save error \(error)")
+                throw StORMError.error("MongoDB Save error \(error)")
+            }
 		} catch {
 			throw StORMError.error("\(error)")
 		}
@@ -149,12 +173,6 @@ open class MongoDBStORM: StORM, StORMProtocol {
 	/// Override this to create your own with c=validation rules etc, as needed.
 	@discardableResult
 	open func setup() throws {}
-
-	public func close(_ collection: MongoCollection, _ client: MongoClient) {
-		collection.close()
-		client.close()
-	}
-
 
 	public func newUUID() -> String {
 		let x = asUUID()
